@@ -1,0 +1,69 @@
+function simpletest_requirements($phase) {
+  $requirements = array();
+
+  $has_phpunit = class_exists('\PHPUnit_Framework_TestCase');
+  $has_curl = function_exists('curl_init');
+  $open_basedir = ini_get('open_basedir');
+
+  $requirements['phpunit'] = array(
+    'title' => t('PHPUnit dependency'),
+    'value' => $has_phpunit ? t('Found') : t('Not found'),
+  );
+  if (!$has_phpunit) {
+    $requirements['phpunit']['severity'] = REQUIREMENT_ERROR;
+    $requirements['phpunit']['description'] = t("The testing framework requires the PHPUnit package. Please run 'composer install --dev' to ensure it is present.");
+  }
+
+  $requirements['curl'] = array(
+    'title' => t('cURL'),
+    'value' => $has_curl ? t('Enabled') : t('Not found'),
+  );
+  if (!$has_curl) {
+    $requirements['curl']['severity'] = REQUIREMENT_ERROR;
+    $requirements['curl']['description'] = t('The testing framework could not be installed because the PHP <a href="http://php.net/manual/curl.setup.php">cURL</a> library is not available.');
+  }
+
+  // SimpleTest currently needs 2 cURL options which are incompatible with
+  // having PHP's open_basedir restriction set.
+  // See https://www.drupal.org/node/674304.
+  $requirements['php_open_basedir'] = array(
+    'title' => t('PHP open_basedir restriction'),
+    'value' => $open_basedir ? t('Enabled') : t('Disabled'),
+  );
+  if ($open_basedir) {
+    $requirements['php_open_basedir']['severity'] = REQUIREMENT_ERROR;
+    $requirements['php_open_basedir']['description'] = t('The testing framework requires the PHP <a href="http://php.net/manual/ini.core.php#ini.open-basedir">open_basedir</a> restriction to be disabled. Check your webserver configuration or contact your web host.');
+  }
+
+  // Check the current memory limit. If it is set too low, SimpleTest will fail
+  // to load all tests and throw a fatal error.
+  $memory_limit = ini_get('memory_limit');
+  if (!Environment::checkMemoryLimit(SIMPLETEST_MINIMUM_PHP_MEMORY_LIMIT, $memory_limit)) {
+    $requirements['php_memory_limit']['severity'] = REQUIREMENT_WARNING;
+    $requirements['php_memory_limit']['description'] = t('The testing framework requires the PHP memory limit to be at least %memory_minimum_limit. The current value is %memory_limit. <a href=":url">Follow these steps to continue</a>.', array('%memory_limit' => $memory_limit, '%memory_minimum_limit' => SIMPLETEST_MINIMUM_PHP_MEMORY_LIMIT, ':url' => 'https://www.drupal.org/node/207036'));
+  }
+
+  $site_directory = 'sites/simpletest';
+  if (!drupal_verify_install_file(\Drupal::root() . '/' . $site_directory, FILE_EXIST | FILE_READABLE | FILE_WRITABLE | FILE_EXECUTABLE, 'dir')) {
+    $requirements['simpletest_site_directory'] = array(
+      'title' => t('Simpletest site directory'),
+      'value' => is_dir(\Drupal::root() . '/' . $site_directory) ? t('Not writable') : t('Missing'),
+      'severity' => REQUIREMENT_ERROR,
+      'description' => t('The testing framework requires the %sites-simpletest directory to exist and be writable in order to run tests.', array(
+        '%sites-simpletest' => $site_directory,
+      )),
+    );
+  }
+  elseif (!file_save_htaccess(\Drupal::root() . '/' . $site_directory, FALSE)) {
+    $requirements['simpletest_site_directory'] = array(
+      'title' => t('Simpletest site directory'),
+      'value' => t('Not protected'),
+      'severity' => REQUIREMENT_ERROR,
+      'description' => t('The file %file does not exist and could not be created automatically, which poses a security risk. Ensure that the directory is writable.', array(
+        '%file' => $site_directory . '/.htaccess',
+      )),
+    );
+  }
+
+  return $requirements;
+}
